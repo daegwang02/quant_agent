@@ -1,7 +1,16 @@
 # requirements.txt
-streamlit
-pandas
-numpy
-openai
-lightgbm
-scikit-learn 
+#streamlit
+#pandas
+#numpy
+#openai
+#lightgbm
+#scikit-learn 
+
+streamlit==1.36.0
+pandas==2.2.2
+numpy==1.26.4
+openai==1.35.7
+lightgbm==4.4.0
+scikit-learn==1.5.0
+bayesian-optimization==1.4.3
+
