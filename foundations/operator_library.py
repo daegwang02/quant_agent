@@ -18,20 +18,21 @@ from utils import get_callable_kwargs
 try:
     from ._libs.rolling import rolling_slope, rolling_rsquare, rolling_resi
     from ._libs.expanding import expanding_slope, expanding_rsquare, expanding_resi
-except ImportError:
-    print(
-        "#### Do not import qlib package in the repository directory in case of importing qlib from . without compiling #####"
-    )
-    raise
-except ValueError:
-    print("!!!!!!!! A error occurs when importing operators implemented based on Cython.!!!!!!!!")
-    print("!!!!!!!! They will be disabled. Please Upgrade your numpy to enable them     !!!!!!!!")
-    # We catch this error because some platform can't upgrade there package (e.g. Kaggle)
-    # https://www.kaggle.com/general/293387
-    # https://www.kaggle.com/product-feedback/98562
-
-
-np.seterr(invalid="ignore")
+    _CYTHON_ENABLED = True
+except (ImportError, ValueError):
+    _CYTHON_ENABLED = False
+    print("WARNING: Cython-optimized operators are disabled. Using pure Python fallbacks.")
+    
+    # Cython이 비활성화된 경우, 대체 함수를 정의합니다.
+    def rolling_rsquare(values, N):
+        # np.nan을 반환하도록 단순화된 대체 로직
+        return np.full_like(values, np.nan)
+    def expanding_rsquare(values):
+        return np.full_like(values, np.nan)
+    def rolling_resi(values, N):
+        return np.full_like(values, np.nan)
+    def expanding_resi(values):
+        return np.full_like(values, np.nan)
 
 
 #################### Element-Wise Operator ####################
@@ -1220,96 +1221,75 @@ class Delta(Rolling):
 # TODO:
 # support pair-wise rolling like `Slope(A, B, N)`
 class Slope(Rolling):
-    """Rolling Slope
-    This operator calculate the slope between `idx` and `feature`.
-    (e.g. [<feature_t1>, <feature_t2>, <feature_t3>] and [1, 2, 3])
-
-    Usage Example:
-    - "Slope($close, %d)/$close"
-
-    # TODO:
-    # Some users may want pair-wise rolling like `Slope(A, B, N)`
-
-    Parameters
-    ----------
-    feature : Expression
-        feature instance
-    N : int
-        rolling window size
-
-    Returns
-    ----------
-    Expression
-        a feature instance with linear regression slope of given window
-    """
-
     def __init__(self, feature, N):
         super(Slope, self).__init__(feature, N, "slope")
 
     def _load_internal(self, instrument, start_index, end_index, *args):
         series = self.feature.load(instrument, start_index, end_index, *args)
-        if self.N == 0:
-            series = pd.Series(expanding_slope(series.values), index=series.index)
+        if _CYTHON_ENABLED:
+            if self.N == 0:
+                series = pd.Series(expanding_slope(series.values), index=series.index)
+            else:
+                series = pd.Series(rolling_slope(series.values, self.N), index=series.index)
         else:
-            series = pd.Series(rolling_slope(series.values, self.N), index=series.index)
+            if self.N == 0:
+                 series = series.expanding(min_periods=1).apply(
+                     lambda x: np.polyfit(np.arange(len(x)), x, 1)[0] if len(x) > 1 else np.nan, raw=True)
+            else:
+                series = series.rolling(self.N, min_periods=2).apply(
+                     lambda x: np.polyfit(np.arange(len(x)), x, 1)[0] if len(x) > 1 else np.nan, raw=True)
         return series
 
 
 class Rsquare(Rolling):
-    """Rolling R-value Square
-
-    Parameters
-    ----------
-    feature : Expression
-        feature instance
-    N : int
-        rolling window size
-
-    Returns
-    ----------
-    Expression
-        a feature instance with linear regression r-value square of given window
     """
-
+    Rolling R-value Square
+    """
     def __init__(self, feature, N):
         super(Rsquare, self).__init__(feature, N, "rsquare")
 
     def _load_internal(self, instrument, start_index, end_index, *args):
-        _series = self.feature.load(instrument, start_index, end_index, *args)
-        if self.N == 0:
-            series = pd.Series(expanding_rsquare(_series.values), index=_series.index)
+        series = self.feature.load(instrument, start_index, end_index, *args)
+        if _CYTHON_ENABLED:
+            if self.N == 0:
+                res = pd.Series(expanding_rsquare(series.values), index=series.index)
+            else:
+                res = pd.Series(rolling_rsquare(series.values, self.N), index=series.index)
+            res.loc[np.isclose(series.rolling(self.N, min_periods=1).std(), 0, atol=2e-05)] = np.nan
         else:
-            series = pd.Series(rolling_rsquare(_series.values, self.N), index=_series.index)
-            series.loc[np.isclose(_series.rolling(self.N, min_periods=1).std(), 0, atol=2e-05)] = np.nan
-        return series
+            # 순수 Python 대체 로직
+            if self.N == 0:
+                res = series.expanding(min_periods=2).apply(
+                    lambda x: pd.Series(x).corr(pd.Series(np.arange(len(x))))**2 if len(x) > 1 else np.nan, raw=True)
+            else:
+                res = series.rolling(self.N, min_periods=2).apply(
+                    lambda x: pd.Series(x).corr(pd.Series(np.arange(len(x))))**2 if len(x) > 1 else np.nan, raw=True)
+        return res
 
 
 class Resi(Rolling):
-    """Rolling Regression Residuals
-
-    Parameters
-    ----------
-    feature : Expression
-        feature instance
-    N : int
-        rolling window size
-
-    Returns
-    ----------
-    Expression
-        a feature instance with regression residuals of given window
     """
-
+    Rolling Regression Residuals
+    """
     def __init__(self, feature, N):
         super(Resi, self).__init__(feature, N, "resi")
 
     def _load_internal(self, instrument, start_index, end_index, *args):
         series = self.feature.load(instrument, start_index, end_index, *args)
-        if self.N == 0:
-            series = pd.Series(expanding_resi(series.values), index=series.index)
+        if _CYTHON_ENABLED:
+            if self.N == 0:
+                res = pd.Series(expanding_resi(series.values), index=series.index)
+            else:
+                res = pd.Series(rolling_resi(series.values, self.N), index=series.index)
         else:
-            series = pd.Series(rolling_resi(series.values, self.N), index=series.index)
-        return series
+            # 순수 Python 대체 로직
+            if self.N == 0:
+                res = series.expanding(min_periods=2).apply(
+                    lambda x: x.iloc[-1] - np.polyval(np.polyfit(np.arange(len(x)), x, 1), len(x) - 1) if len(x) > 1 else np.nan, raw=True)
+            else:
+                res = series.rolling(self.N, min_periods=2).apply(
+                    lambda x: x.iloc[-1] - np.polyval(np.polyfit(np.arange(len(x)), x, 1), len(x) - 1) if len(x) > 1 else np.nan, raw=True)
+        return res
 
 
 class WMA(Rolling):
