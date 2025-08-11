@@ -11,7 +11,8 @@ import pandas as pd
 from typing import Union, List, Type
 from scipy.stats import percentileofscore
 from .base import Expression, ExpressionOps, Feature, PFeature
-from ..log import get_module_logger
+# from ..log import get_module_logger
+from log import get_module_logger
 from ..utils import get_callable_kwargs
 
 try:
