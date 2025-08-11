@@ -215,48 +215,31 @@
 
 # clients/llm_client.py
 
-import openai # Google Gemini 대신 OpenAI를 사용하도록 수정
+# clients/llm_client.py
+
+import openai
 import json
 import time
-import re # 정규표현식 모듈 추가
+import re
 from typing import Dict, Any, List
 
 class LLMClient:
     """
     OpenAI API와 상호작용하여 LLM의 기능을 활용하는 클라이언트입니다.
     """
-    # 💡 Gemini API 대신 OpenAI API를 사용하도록 수정했습니다.
     def __init__(self, api_key: str):
-        """
-        LLM 클라이언트를 초기화하고 API를 설정합니다.
-        
-        Args:
-            api_key (str): OpenAI에서 발급받은 API 키입니다.
-        """
         if not api_key or not api_key.startswith("sk-"):
             raise ValueError("OpenAI API 키가 잘못되었거나 설정되지 않았습니다.")
             
         self.client = openai.OpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini" # 모델명을 원하는 대로 설정할 수 있습니다
+        self.model = "gpt-4o-mini"
         self.temperature = 0.2
         self.top_p = 1.0
         self.max_tokens = 4096
 
     def _send_request(self, prompt: str, retries=3, delay=5) -> str:
-        """
-        주어진 프롬프트를 API에 전송하고, 재시도 로직을 포함하여 응답을 받습니다.
-
-        Args:
-            prompt (str): LLM에 전달할 전체 프롬프트 문자열입니다.
-            retries (int): API 호출 실패 시 재시도 횟수입니다.
-            delay (int): 재시도 간 대기 시간 (초) 입니다.
-
-        Returns:
-            str: LLM의 응답 텍스트.
-        """
         for i in range(retries):
             try:
-                # 💡 OpenAI API 호출 방식에 맞게 수정
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
@@ -274,12 +257,8 @@ class LLMClient:
         raise RuntimeError("LLM API 호출에 최종적으로 실패했습니다.")
 
     def _parse_json_from_response(self, response_text: str) -> Dict[str, Any]:
-        """LLM 응답에서 JSON 코드 블록을 추출하고 파싱합니다."""
-        # ```json ... ``` 형태의 마크다운 코드 블록에서 JSON 부분만 추출
-        # 💡 re 모듈을 import해야 합니다.
         match = re.search(r'```json\s*([\s\S]+?)\s*```', response_text)
         if not match:
-            # 💡 JSON 객체가 없으면 전체 텍스트를 파싱 시도 (단일 JSON 객체일 경우 대비)
             try:
                 return json.loads(response_text)
             except json.JSONDecodeError:
@@ -292,11 +271,6 @@ class LLMClient:
             raise ValueError(f"JSON 파싱 오류: {e}\n원본 JSON 문자열: {json_str}")
 
     def generate_hypothesis(self, external_knowledge: str, existing_hypotheses: List[str], feedback_summary: str) -> Dict[str, Any]:
-        """
-        시장 가설을 생성합니다. (IdeaAgent가 사용)
-        [수정] feedback_summary 파라미터 추가 및 프롬프트 수정
-        """
-        # 💡 feedback_summary 파라미터 추가
         prompt = f"""
         당신은 월스트리트의 저명한 퀀트 분석가입니다. 당신의 임무는 새로운 알파 팩터를 발굴하기 위한 창의적이고 논리적인 시장 가설을 수립하는 것입니다.
 
@@ -342,9 +316,6 @@ class LLMClient:
         return self._parse_json_from_response(response_text)
 
     def generate_factor_from_hypothesis(self, hypothesis: Dict[str, Any]) -> Dict[str, str]:
-        """
-        주어진 가설로부터 팩터 설명과 공식을 생성합니다. (FactorAgent가 사용)
-        """
         prompt = f"""
         당신은 퀀트 개발자입니다. 주어진 시장 가설을 실행 가능한 알파 팩터로 변환하는 것이 당신의 역할입니다.
 
@@ -372,7 +343,6 @@ class LLMClient:
         return self._parse_json_from_response(response_text)
     
     def score_hypothesis_alignment(self, hypothesis: str, factor_description: str) -> Dict[str, Any]:
-        """가설과 팩터 설명 간의 일치도를 평가합니다. (c1(h,d))"""
         prompt = f"""
         당신은 퀀트 리서치 팀장입니다. 가설과 이를 구현한 팩터 설명 간의 논리적 일관성을 평가해야 합니다.
 
@@ -396,7 +366,6 @@ class LLMClient:
         return self._parse_json_from_response(response_text)
 
     def score_description_alignment(self, factor_description: str, factor_formula: str) -> Dict[str, Any]:
-        """팩터 설명과 공식 간의 일치도를 평가합니다. (c2(d,f))"""
         prompt = f"""
         당신은 퀀트 코드 리뷰어입니다. 팩터 설명과 실제 구현 공식이 일치하는지 검토해야 합니다.
 
@@ -417,12 +386,12 @@ class LLMClient:
         return self._parse_json_from_response(response_text)
 
     def generate_investment_advice(self, factor_info: Dict[str, Any]) -> str:
-        """최종 선정된 팩터를 기반으로 투자 조언 리포트를 생성합니다. (AdvisoryAgent가 사용)"""
         prompt = f"""
         당신은 개인 투자자를 위한 투자 자문가입니다. 복잡한 퀀트 모델의 결과를 이해하기 쉬운 투자 조언으로 변환하는 것이 당신의 임무입니다.
         최근 발굴된 우수한 알파 팩터 정보를 바탕으로, 아래 목차에 따라 '투자 조언 리포트'를 작성해주십시오.
 
         --- [최종 알파 팩터 정보] ---
+        - 팩터 이름: {factor_info.get('name')}
         - 팩터 공식: {factor_info.get('formula')}
         - 팩터 설명: {factor_info.get('description')}
         - 연평균수익률(AR): {factor_info.get('ar'):.2%}
@@ -444,3 +413,4 @@ class LLMClient:
         (본 리포트가 투자자에게 제안하는 구체적인 행동 지침(Actionable Advice)을 요약하여 2-3가지 항목으로 작성하세요.)
         """
         return self._send_request(prompt)
+
