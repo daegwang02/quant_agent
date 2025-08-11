@@ -222,16 +222,24 @@ import json
 import time
 import re
 from typing import Dict, Any, List
+import httpx # httpx 라이브러리를 추가하여 프록시를 처리합니다.
 
 class LLMClient:
     """
     OpenAI API와 상호작용하여 LLM의 기능을 활용하는 클라이언트입니다.
     """
-    def __init__(self, api_key: str):
+    # 💡 수정: proxies 인자를 추가하고, openai.OpenAI 초기화 시 http_client를 사용하도록 변경
+    def __init__(self, api_key: str, proxies: Dict[str, str] = None):
         if not api_key or not api_key.startswith("sk-"):
             raise ValueError("OpenAI API 키가 잘못되었거나 설정되지 않았습니다.")
+        
+        # proxies 인자가 있으면 httpx 클라이언트를 통해 프록시를 설정합니다.
+        if proxies:
+            http_client = httpx.Client(proxies=proxies)
+            self.client = openai.OpenAI(api_key=api_key, http_client=http_client)
+        else:
+            self.client = openai.OpenAI(api_key=api_key)
             
-        self.client = openai.OpenAI(api_key=api_key)
         self.model = "gpt-4o-mini"
         self.temperature = 0.2
         self.top_p = 1.0
@@ -413,4 +421,5 @@ class LLMClient:
         (본 리포트가 투자자에게 제안하는 구체적인 행동 지침(Actionable Advice)을 요약하여 2-3가지 항목으로 작성하세요.)
         """
         return self._send_request(prompt)
+
 
